@@ -43,31 +43,37 @@ int main() {
 	cl_kernel kernel = clCreateKernel(program, "piMC", NULL);
 
 	// Crea los argumentos en el host
-	cl_uint seedOffset = (cl_uint)clock();
-	cl_uint totalIters = 1024 * 1024 * 1024;
-
-	// Crea el buffer en la GPU, para el valor de salida
-	cl_mem gpuBuffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(cl_uint), NULL, NULL);
-
-	// Pasa los argumentos a la kernel
-	clSetKernelArg(kernel, 0, sizeof(cl_uint), (void *)&seedOffset);
-	clSetKernelArg(kernel, 1, sizeof(cl_uint), (void *)&totalIters);
-	clSetKernelArg(kernel, 2, sizeof(cl_uint), (void *)&gpuBuffer);
-
-	// Ejecuta la kernel
+	cl_uint seedRandom = (cl_uint)clock();
 	size_t localSize = 64; //tamaño del bloque de ejecución
 	size_t globalSize = 1024; //número total de threads
+	cl_uint totalIters = UINT_MAX; // (2^32)-1;//puntos totales a calcular
+
+	// Crea el buffer en la GPU, para el valor de salida
+	cl_mem gpuBuffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(cl_ulong) * globalSize, NULL, NULL);
+
+	// Pasa los argumentos a la kernel
+	clSetKernelArg(kernel, 0, sizeof(cl_uint), (void *)&seedRandom);
+	clSetKernelArg(kernel, 1, sizeof(cl_uint), (void *)&totalIters);
+	clSetKernelArg(kernel, 2, sizeof(cl_mem), (void *)&gpuBuffer);
+
+	// Ejecuta la kernel
 	clEnqueueNDRangeKernel(commandQueue, kernel, 1, NULL, &globalSize, &localSize, 0, NULL, NULL);
 	clFinish(commandQueue);
 
 	// Recupera el resultado desde la GPU y lo pone en un buffer del host
-	cl_uint* output = (cl_uint*)malloc(sizeof(cl_uint));
-	clEnqueueReadBuffer(commandQueue, gpuBuffer, CL_TRUE, 0, sizeof(cl_uint), output, 0, NULL, NULL);
+	cl_ulong* output = (cl_ulong*)malloc(sizeof(cl_ulong) * globalSize);
+	clEnqueueReadBuffer(commandQueue, gpuBuffer, CL_TRUE, 0, sizeof(cl_ulong) * globalSize, output, 0, NULL, NULL);
+
+	// Acumula contadores
+	cl_ulong enCirculo = 0;
+	for (cl_ulong i = 0; i < globalSize; i++) {
+		enCirculo += output[i];
+	}
 
 	// Presenta el resultado
-	printf("Puntos totales calculados %d\n", totalIters);
-	printf("Puntos en el circulo %d\n", output[0]);
-	printf("PI aproximado %.20f\n", 4.0 * ((double)output[0] / (double)totalIters));
+	printf("Puntos totales calculados %lu\n", totalIters);
+	printf("Puntos en el circulo %lu\n", enCirculo);
+	printf("PI aproximado %.20f\n", 4.0 * ((double)enCirculo / (double)totalIters));
 
 	// Libera los recursos
 	delete[] source;
